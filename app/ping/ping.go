@@ -42,6 +42,7 @@ func eventCmdRun(_ *cobra.Command, args []string) {
 	ipAddr := net.ParseIP(ipOrDomain)
 	isDomain := false
 	if ipAddr == nil {
+		// 这里是个dns查询
 		tmpIpAddr, err := net.ResolveIPAddr("ip", ipOrDomain)
 		if err != nil {
 			log.Fatalf("解析主机(%s)异常，错误: %s", ipOrDomain, err)
@@ -51,7 +52,7 @@ func eventCmdRun(_ *cobra.Command, args []string) {
 	}
 
 	sendPack := new(icmp.Icmp).DefaultForPing()
-	sendData := make([]byte, flagLSize)
+	sendPack.Data = make([]byte, flagLSize)
 
 	timeout := time.Millisecond * time.Duration(flagWTimeout)
 
@@ -61,7 +62,7 @@ func eventCmdRun(_ *cobra.Command, args []string) {
 		fmt.Printf("\n正在 Ping %s 具有 %d 字节的数据:\n", ipAddr, flagLSize)
 	}
 
-	conn, err := net.DialTimeout("ip4:icmp", ipAddr.String(), timeout)
+	conn, err := net.DialTimeout("ip:icmp", ipAddr.String(), timeout)
 	if err != nil {
 		log.Fatalf("链接主机(%s)异常，错误: %s", ipAddr, err)
 	}
@@ -78,22 +79,21 @@ func eventCmdRun(_ *cobra.Command, args []string) {
 	for i := 0; i < flagNCount; i++ {
 
 		sendPack.SequenceNum = uint16(i + 1)
-		sendPack.GenerateChecksum(sendData)
+		sendPack.GenerateChecksum()
 
 		timeStart := time.Now()
 
 		_ = conn.SetDeadline(timeStart.Add(timeout))
-
-		_, err = conn.Write(append(sendPack.ToBytes(), sendData...))
+		_, err = conn.Write(sendPack.ToBytes())
 		if err != nil {
 			log.Fatalf("写入数据异常，错误: %s", err)
 		}
 		numSend++
 
-		bufferResp := make([]byte, 65535)
+		bufferResp := make([]byte, 64)
 		cntReply, err := conn.Read(bufferResp)
 		if err != nil {
-			fmt.Println("请求超时。")
+			fmt.Println("请求超时。", err)
 			continue
 		}
 		numReceived++
@@ -118,9 +118,14 @@ func echo(ipAddr string, buf []byte, bufLen, ts int) {
 
 func stat(ipAddr string, numSend, numReceived, minTS, maxTS, totalTS int) {
 	fmt.Printf("\n%s 的 Ping 统计信息: \n", ipAddr)
-	fmt.Printf("    数据包: 已发送 = %d，已接收 = %d，丢失 = %d (%.0f%% 丢失)，\n", numSend, numReceived, numSend-numReceived, float32(numSend-numReceived)/float32(numSend))
+	fmt.Printf("    数据包: 已发送 = %d，已接收 = %d，丢失 = %d (%.0f%% 丢失)，\n", numSend, numReceived, numSend-numReceived, float32(numSend-numReceived)/float32(numSend)*100)
 	fmt.Println("往返行程的估计时间(以毫秒为单位):")
-	fmt.Printf("    最短 = %dms，最长 = %dms，平均 = %dms\n", minTS, maxTS, totalTS/numReceived)
+	if numReceived > 0 {
+		fmt.Printf("    最短 = %dms，最长 = %dms，平均 = %dms\n", minTS, maxTS, totalTS/numReceived)
+	} else {
+		fmt.Printf("    最短 = %dms，最长 = %dms，平均 = %dms\n", minTS, maxTS, 0)
+	}
+
 }
 
 func Execute() {
