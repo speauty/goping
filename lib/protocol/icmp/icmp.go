@@ -55,6 +55,7 @@ func (o *Icmp) GenerateChecksum() {
 
 	dataset := o.ToBytes() // 转字节数组(注意大小端模式, 网络传输是大端)(一个字节8bit)
 
+	// 分块二进制求和
 	for i := 0; i < len(dataset); i++ {
 		if i%2 == 0 { // 高位8bit数据
 			sum += uint32(dataset[i]) << 8
