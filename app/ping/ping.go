@@ -77,23 +77,22 @@ func eventCmdRun(_ *cobra.Command, args []string) {
 	totalTS := 0
 
 	for i := 0; i < flagNCount; i++ {
-
 		sendPack.SequenceNum = uint16(i + 1)
 		sendPack.GenerateChecksum()
 
 		timeStart := time.Now()
 
 		_ = conn.SetDeadline(timeStart.Add(timeout))
-		_, err = conn.Write(sendPack.ToBytes())
-		if err != nil {
+
+		if _, err = conn.Write(sendPack.ToBytes()); err != nil {
 			log.Fatalf("写入数据异常，错误: %s", err)
 		}
 		numSend++
 
-		bufferResp := make([]byte, 64)
-		cntReply, err := conn.Read(bufferResp)
+		buf := make([]byte, 64)
+		cntReply, err := conn.Read(buf)
 		if err != nil {
-			fmt.Println("请求超时。", err)
+			fmt.Println("请求超时。")
 			continue
 		}
 		numReceived++
@@ -107,7 +106,7 @@ func eventCmdRun(_ *cobra.Command, args []string) {
 			maxTS = ts
 		}
 
-		echo(ipAddr.String(), bufferResp, cntReply, ts)
+		echo(ipAddr.String(), buf, cntReply, ts)
 	}
 	stat(ipAddr.String(), numSend, numReceived, minTS, maxTS, totalTS)
 }
@@ -118,7 +117,9 @@ func echo(ipAddr string, buf []byte, bufLen, ts int) {
 
 func stat(ipAddr string, numSend, numReceived, minTS, maxTS, totalTS int) {
 	fmt.Printf("\n%s 的 Ping 统计信息: \n", ipAddr)
-	fmt.Printf("    数据包: 已发送 = %d，已接收 = %d，丢失 = %d (%.0f%% 丢失)，\n", numSend, numReceived, numSend-numReceived, float32(numSend-numReceived)/float32(numSend)*100)
+	if numSend > 0 {
+		fmt.Printf("    数据包: 已发送 = %d，已接收 = %d，丢失 = %d (%.0f%% 丢失)\n", numSend, numReceived, numSend-numReceived, float32(numSend-numReceived)/float32(numSend)*100)
+	}
 	fmt.Println("往返行程的估计时间(以毫秒为单位):")
 	if numReceived > 0 {
 		fmt.Printf("    最短 = %dms，最长 = %dms，平均 = %dms\n", minTS, maxTS, totalTS/numReceived)
@@ -129,6 +130,11 @@ func stat(ipAddr string, numSend, numReceived, minTS, maxTS, totalTS int) {
 }
 
 func Execute() {
+	defer func() { // 还是意思意思一下, 拦截处理
+		if err := recover(); err != nil {
+			log.Fatalf("执行异常, 错误: %s", err)
+		}
+	}()
 	if err := cmd.Execute(); err != nil {
 		log.Fatalf("执行异常, 错误: %s", err)
 	}
